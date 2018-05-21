@@ -52,6 +52,10 @@ class PaystackSettings(Document):
 		description = kwargs.get('description')
 		slug = kwargs.get('reference_docname')
 		email = kwargs.get('payer_email')
+		metadata = {
+			'payment_request': kwargs.get('order_id'),
+			'customer_name': kwargs.get('payer_name')
+		}
 
 		secret_key = self.get_password(fieldname='secret_key', raise_exception=False)
 
@@ -70,7 +74,8 @@ class PaystackSettings(Document):
 			identifier = hash('{0}{1}{2}'.format(amount, description, slug))
 			invoice_api.create_invoice(
 				customer=customer_api.customer_code, amount=amount,
-				due_date=nowdate(), description=description, invoice_number=identifier
+				due_date=nowdate(), description=description,
+				invoice_number=identifier, metadata=metadata
 			)
 		except RequestException as e:
 			frappe.throw(_(e.message))
