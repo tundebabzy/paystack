@@ -10,7 +10,7 @@ from frappe import _
 from frappe.integrations.utils import create_payment_gateway
 from frappe.model.document import Document
 from frappe.utils import call_hook_method, nowdate
-from requests import RequestException
+from requests import RequestException, ConnectionError
 
 SUPPORTED_CURRENCIES = ['NGN']
 
@@ -32,15 +32,15 @@ class PaystackSettings(Document):
 		call_hook_method('payment_gateway_enabled', gateway=name)
 
 	def validate_credentials(self):
+		api = paystakk.TransferControl(secret_key=self.secret_key, public_key=self.public_key)
 		try:
-			paystack = paystakk.TransferControl(secret_key=self.secret_key, public_key=self.public_key)
-			paystack.get_balance()
-		except RequestException:
-			frappe.throw(
-				_('Verification of your credentials failed. Please ensure you '
-				  'have a working internet connection and that your '
-				  'credentials are correct')
-			)
+			api.get_balance()
+		except ConnectionError:
+			frappe.throw('There was a connection problem. Please ensure that'
+						 ' you have a working internet connection.')
+
+		if not api.ctx.status:
+			frappe.throw(api.ctx.message, title=_("Failed Credentials Validation"))
 
 	def validate_transaction_currency(self, currency):
 		if currency not in self.supported_currencies:
@@ -61,26 +61,24 @@ class PaystackSettings(Document):
 
 		customer_api = paystakk.Customer(secret_key=secret_key, public_key=self.public_key)
 
-		try:
-			customer_api.fetch_customer(email)
-			if not customer_api.customer_code:
-				customer_api.create_customer(email=email)
-		except RequestException as e:
-			frappe.throw(_(e.message))
+		customer_api.fetch_customer(email)
+		if not customer_api.ctx.status:
+			customer_api.create_customer(email=email)
+
+		if not customer_api.ctx.status:
+			frappe.throw(customer_api.ctx.message)
 
 		invoice_api = paystakk.Invoice(secret_key=secret_key, public_key=self.public_key)
 
-		try:
-			identifier = hash('{0}{1}{2}'.format(amount, description, slug))
-			invoice_api.create_invoice(
-				customer=customer_api.customer_code, amount=amount,
-				due_date=nowdate(), description=description,
-				invoice_number=identifier, metadata=metadata
-			)
-		except RequestException as e:
-			frappe.throw(_(e.message))
+		identifier = hash('{0}{1}{2}'.format(amount, description, slug))
+		invoice_api.create_invoice(customer=customer_api.customer_code,
+								   amount=amount, due_date=nowdate(),
+								   description=description,
+								   invoice_number=identifier, metadata=metadata)
 
-		payment_url = 'https://api.paystack.co/paymentrequest/notify/{invoice_code}'.format(
-			invoice_code=invoice_api.invoice_code)
-
-		return payment_url
+		if not invoice_api.ctx.status:
+			frappe.throw(invoice_api.ctx.message)
+		else:
+			payment_url = 'https://api.paystack.co/paymentrequest/notify/{invoice_code}'.format(
+				invoice_code=invoice_api.invoice_code)
+			return payment_url
