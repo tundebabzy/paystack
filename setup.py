@@ -20,7 +20,7 @@ setup(
 	version=version,
 	description='App that integrates Paystack into ERPNext',
 	author='XLevel Retail Systems Nigeria Ltd',
-	author_email='olamide@xlevelretail.com',
+	author_email='tunde@francisakindele.com',
 	packages=find_packages(),
 	zip_safe=False,
 	include_package_data=True,
